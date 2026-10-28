@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tango's Tropical Slash</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#171717">
+  <meta name="screen-orientation" content="portrait">
+  <link rel="stylesheet" href="style-mobile.css">
+  <style>
+    html,body { margin:0; width:100%; height:100%; overflow:hidden; background:#171717; touch-action:none; }
+    #GameCanvas { outline:none; touch-action:none; }
+    #splash { display:none!important; }
+    #startup { position:fixed; inset:0; z-index:9999; display:grid; place-items:center; overflow:hidden; background:#171717; color:#ddd; font:400 16px/1.5 Arial,sans-serif; text-align:center; }
+    #startup .card { width:min(92vw,460px); padding:12px; box-sizing:border-box; }
+    #startup .loading-logo { display:block; width:min(100%,340px); height:auto; margin:0 auto 32px; }
+    #startup-message { min-height:48px; margin:24px 0 18px; }
+    #startup-busy { display:block; box-sizing:border-box; width:28px; height:28px; margin:0 auto 20px; border:3px solid #555; border-top-color:#ddd; border-radius:50%; animation:startup-turn .8s linear infinite; }
+    #startup.failed #startup-busy { visibility:hidden; }
+    @keyframes startup-turn { to { transform:rotate(360deg); } }
+    #startup button { width:174px; height:42px; border:1px solid #888; border-radius:4px; background:#404040; color:#ddd; font:400 16px Arial,sans-serif; cursor:pointer; }
+    #startup button:disabled { opacity:.55; }
+    @media(prefers-reduced-motion:reduce) { #startup-busy { animation:none; } }
+  </style>
+</head>
+<body>
+  <canvas id="GameCanvas" oncontextmenu="event.preventDefault()" tabindex="0" aria-label="Tango's Tropical Slash game"></canvas>
+  <div id="splash"><div class="progress-bar"><span></span></div></div>
+  <div id="startup" role="status" aria-live="polite">
+    <div class="card">
+    <img class="loading-logo" src="splash.png" width="547" height="200" alt="Made with Cocos Creator">
+    <span id="startup-busy" aria-hidden="true"></span>
+    <p id="startup-message">Loading…</p>
+    <button id="startup-retry" hidden>RETRY</button>
+  </div></div>
+  <script>
+  (function () {
+    'use strict';
+    var overlay=document.getElementById('startup'), message=document.getElementById('startup-message');
+    var retry=document.getElementById('startup-retry'), last=performance.now(), hiddenAt=0, failed=false, started=false;
+    var chinese=new URL(location.href).searchParams.get('lang')==='zh';
+    if(chinese){
+      document.documentElement.lang='zh-CN';document.title='探戈的热带切切乐';
+      document.getElementById('GameCanvas').setAttribute('aria-label','探戈的热带切切乐游戏');
+      message.textContent='正在加载…';retry.textContent='重试';
+    }
+    var attempt=Number(new URL(location.href).searchParams.get('attempt')||0);
+    window.__tangoStartup={attempt:attempt,ready:false,failed:false,progress:0};
+    function markProgress() { last=performance.now(); window.__tangoStartup.progress++; }
+    function fail(text) {
+      if(window.__tangoStartup.ready||failed)return;
+      failed=true; window.__tangoStartup.failed=true;window.__tangoStartup.error=text||null; overlay.classList.add('failed');
+      text=text||'The beach could not load. Please try again.';
+      overlay.style.display='grid'; message.textContent=chinese?'加载失败，请重试。':'Loading failed. Please retry.'; retry.hidden=false;
+    }
+    retry.addEventListener('click',function(){
+      retry.disabled=true; var next=new URL(location.href);next.searchParams.set('attempt',String(attempt+1));
+      // A new document creates fresh loader requests and destroys callbacks from the old attempt.
+      location.replace(next.href);
+    });
+    window.addEventListener('error',function(e){
+      if(e.target&&e.target.tagName==='SCRIPT')fail('A game file could not load. Please try again.');
+      else if(!window.__tangoStartup.ready)fail('The beach could not open. Please try again.');
+    },true);
+    window.addEventListener('unhandledrejection',function(){ if(!window.__tangoStartup.ready)fail(); });
+    document.addEventListener('visibilitychange',function(){
+      if(document.hidden)hiddenAt=performance.now();
+      else if(hiddenAt){last+=performance.now()-hiddenAt;hiddenAt=0;}
+    });
+    try { new PerformanceObserver(function(list){if(list.getEntries().length)markProgress();}).observe({entryTypes:['resource']}); } catch(e){}
+    var imageProgressMark=-1;
+    function watchdog(){
+      var app=window.__tango&&window.__tango.app;
+      if(app&&app.imageLoadGuard){var mark=app.imageLoadGuard.progress();if(mark!==imageProgressMark){imageProgressMark=mark;markProgress();}}
+      if(app&&app.ready&&!failed){window.__tangoStartup.ready=true;overlay.style.display='none';return;}
+      if(app&&app.loadFailed&&!failed)fail(app.lastLoadError||'The island rules could not load. Please retry.');
+      if(!document.hidden&&!failed&&performance.now()-last>=10000)fail('Loading stopped. Check the connection and retry.');
+      if(!window.__tangoStartup.ready)requestAnimationFrame(watchdog);
+    }
+    requestAnimationFrame(watchdog);
+    function script(src,next){
+      if(failed)return;
+      var node=document.createElement('script');node.src=src+(src.indexOf('?')>=0?'&':'?')+'attempt='+attempt;
+      node.onload=function(){markProgress();if(!failed)next();};
+      node.onerror=function(){fail('A game file could not load. Please try again.');};
+      document.body.appendChild(node);
+    }
+    script('src/settings.js',function(){script('main.js',function(){
+      var debug=window._CCSettings&&window._CCSettings.debug;
+      script(debug?'cocos2d-js.js':'cocos2d-js-min.js',function(){
+        function boot(){if(started||failed)return;started=true;window.boot();}
+        if((typeof CC_PHYSICS_BUILTIN!=='undefined'&&CC_PHYSICS_BUILTIN)||(typeof CC_PHYSICS_CANNON!=='undefined'&&CC_PHYSICS_CANNON))script(debug?'physics.js':'physics-min.js',boot);
+        else boot();
+      });
+    });});
+  })();
+  </script>
+</body>
+</html>
